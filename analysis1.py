@@ -11,6 +11,7 @@ os.chdir('/Users/yesh/Documents/ent_ai/ent_covid')
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime
 from scipy import stats
 import pycountry
 import re
@@ -23,6 +24,7 @@ from wordcloud import WordCloud
 import requests
 import seaborn as sns
 import yaml
+import statsmodels.api as sm
 
 config = yaml.load(open('./config.yaml'), Loader=yaml.FullLoader)
 
@@ -33,6 +35,28 @@ plt.style.use('seaborn')
 SAVE_DIR = './data'
 PREPROCESSED_FP = 'preprocessed.pkl'
 ALTMETRICS_KEY = config['ALTMETRICS_KEY']
+
+PRECOVID_DATETIME_0 = datetime(2019,4,1)
+PRECOVID_DATETIME_1 = datetime(2020,3,31)
+
+COVID_DATETIME_0 = datetime(2020,4,1)
+COVID_DATETIME_1 = datetime(2021,3,31)
+
+journals = ['J Laryngol Otol',
+'Otolaryngol Head Neck Surg',
+'Int Forum Allergy Rhinol',
+'JAMA Otolaryngol Head Neck Surg',
+'Head Neck',
+'Eur Arch Otorhinolaryngol',
+'Auris Nasus Larynx',
+'Laryngoscope',
+'Ann Otol Rhinol Laryngol',
+'Clin Otolaryngol',
+'Am J Rhinol Allergy',
+'Int J Pediatr Otorhinolaryngol',
+'Acta Otolaryngol',
+'Otol Neurotol',
+'Ear Hear',]
 
 
 ##### HELPER FUNCTIONS
@@ -98,25 +122,61 @@ else:
     
     df_covid = pd.read_pickle(fp_covid)
     df_covid['group'] = 'covid'
+    df_covid['pubdate'] = pd.to_datetime(df_covid['pubdate'], format='%Y-%m-%d')
+    df_covid = df_covid[(df_covid['pubdate'] > COVID_DATETIME_0) & (df_covid['pubdate'] < COVID_DATETIME_1)]
+ 
     
     df_noncovid = pd.read_pickle(fp_noncovid)
     df_noncovid['group'] = 'noncovid'
+    df_noncovid['pubdate'] = pd.to_datetime(df_noncovid['pubdate'], format='%Y-%m-%d')
+    df_noncovid = df_noncovid[(df_noncovid['pubdate'] > COVID_DATETIME_0) & (df_noncovid['pubdate'] < COVID_DATETIME_1)]
+  
     
     df_precovid = pd.read_pickle(fp_precovid)
     df_precovid['group'] = 'precovid'
+    df_precovid['pubdate'] = pd.to_datetime(df_precovid['pubdate'], format='%Y-%m-%d')
+    df_precovid = df_precovid[(df_precovid['pubdate'] > PRECOVID_DATETIME_0) & (df_precovid['pubdate'] < PRECOVID_DATETIME_1)]
     
     df = pd.concat([df_covid, df_noncovid, df_precovid], axis=0, ignore_index=True)
     
     
+    # other groups
+    fp_om = SAVE_DIR + '/otitis_media_df.pkl'
+    fp_snhl = SAVE_DIR + '/snhl_df.pkl'
+    fp_osa = SAVE_DIR + '/osa_df.pkl'
+    fp_cs = SAVE_DIR + '/chronic_sinusitis_df.pkl'    
+    fp_h = SAVE_DIR + '/hoarseness_df.pkl'
+    
+    df_om = pd.read_pickle(fp_om)
+    df_om['group'] = 'otitis_media'
+    df_om['pubdate'] = pd.to_datetime(df_om['pubdate'], format='%Y-%m-%d')
+
+    df_snhl = pd.read_pickle(fp_snhl)
+    df_snhl['group'] = 'snhl'
+    df_snhl['pubdate'] = pd.to_datetime(df_snhl['pubdate'], format='%Y-%m-%d')
+
+    df_osa = pd.read_pickle(fp_osa)
+    df_osa['group'] = 'osa'
+    df_osa['pubdate'] = pd.to_datetime(df_osa['pubdate'], format='%Y-%m-%d')
+    
+    df_cs = pd.read_pickle(fp_cs)
+    df_cs['group'] = 'chronic_sinusitis'
+    df_cs['pubdate'] = pd.to_datetime(df_cs['pubdate'], format='%Y-%m-%d')
+
+    df_h = pd.read_pickle(fp_h)
+    df_h['group'] = 'hoarseness'
+    df_h['pubdate'] = pd.to_datetime(df_h['pubdate'], format='%Y-%m-%d')
+
+    
+    df = pd.concat([df, df_om, df_snhl, df_osa, df_cs, df_h], axis=0, ignore_index=True)
+
     ##################
     ### PREPROCESSING
     ##################
-    df['pubdate'] = pd.to_datetime(df['pubdate'], format='%Y-%m-%d')
+   
     df['year'] = df['pubdate'].dt.year
     df['month'] = df['pubdate'].dt.month
     df['day'] = df['pubdate'].dt.day
-    
-    df = df[df['year'].isin([2019, 2020])]
     
     
     # COUNTRY
@@ -154,18 +214,23 @@ else:
              'Video-Audio Media', 'Historical Article', 
              'Introductory Journal Article', 'Biography',
              'Portrait', 'Consensus Development Conference',
-             'Randomized Controlled Trial, Veterinary',
              'Patient Education Handout', 'Personal Narrative',
              'Technical Report', 'Retraction of Publication',
-             'English Abstract', 'Clinical Trial, Veterinary',
+             'English Abstract',
              'Retracted Publication', 'Clinical Trial Protocol',
-             'Lecture', 'Address'
+             'Lecture', 'Address', 'News'
              ]
     
+    vet_study_types = ['Randomized Controlled Trial, Veterinary', 'Clinical Trial, Veterinary']
     
     # assign tiers
     def assign_tier(row):
         pubtypes = row['pubtypes']
+        
+        for p in pubtypes:
+            if p in vet_study_types:
+                return 'drop'
+        
         for p in pubtypes:
             if p in tier1:
                 return 'tier1'
@@ -206,7 +271,7 @@ else:
     df['citation_count_ndays'] = df.apply(lambda x: count_citations(x, 'citedByWithInNDays'), axis=1)
    
     # GET JOURNAL IMPACT FACTOR AND H-INDEX
-    journals = pd.read_csv(SAVE_DIR + '/journals.csv')
+    journals = pd.read_csv('journals.csv')
     df = df.merge(journals, how='left', left_on='journal_abbr', right_on='journal') 
     
 
@@ -301,7 +366,8 @@ else:
     
     def preprocess_keywords(row):
         # get keywords
-        document = ' '.join([word for word in row['keywords']])
+        # print(row)
+        document = ' '.join([word for word in row['keywords'] if word])
         #document = document + ' ' + ' '.join([word for word in row['meshheadings_major']])
         #document = document + ' ' + ' '.join([word for word in row['meshheadings_minor']])
     
@@ -342,7 +408,76 @@ else:
     # SAVE
     df.to_pickle(SAVE_DIR + '/' + PREPROCESSED_FP)
 
+
+
+# make sure only include journals that are included in study
+df = df[df['journal_abbr'].isin(journals)]
+
     
+######## SEPERATE OUT TOPICS FROM THE ORIGINAL DF
+df_topics = df[~df['group'].isin(['covid', 'precovid', 'noncovid'])].copy()
+df = df[df['group'].isin(['covid', 'precovid', 'noncovid'])].copy()
+
+
+# DROP VET STUDIES
+df = df[df['tier'] != 'drop']
+
+# Count topics:
+df_topics.groupby('group').count()
+
+
+##################
+# JOURNAL - portion COVID
+##################
+# - by group
+g = get_group_percents(df[df['group'] != 'precovid'], ['group', 'journal_abbr'])
+print(g)
+
+g.sort_values(by=['group','perc'], ascending=False)
+
+chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
+                                       g.loc['noncovid']['count']])
+print('p =', p)
+
+# - by journal
+g = get_group_percents(df[df['group'] != 'precovid'], ['journal_abbr', 'group'])
+print(g)
+g = g.sort_values(by=['perc', 'journal_abbr'], ascending=False)
+
+journals = np.unique(g.index.get_level_values(0).values)
+table = [g.loc[journal]['count'] for journal in journals]
+chi, p, _, _ = stats.chi2_contingency(table)
+print('p =', p)
+
+# - plot journals and covid papers
+covid_perc = g.xs('covid', level='group')['perc'].values
+noncovid_perc = g.xs('noncovid', level='group')['perc'].values
+labels = g.xs('covid', level='group').index.get_level_values(0).values
+
+ascending_cov_indcs = covid_perc.argsort()
+covid_perc = covid_perc[ascending_cov_indcs]
+noncovid_perc = noncovid_perc[ascending_cov_indcs[::-1]]
+labels = labels[ascending_cov_indcs]
+
+fig, ax = plt.subplots()
+x = np.arange(len(labels))  # the label locations
+width = 0.35  # the width of the bars
+
+ax.barh(x + width/2, noncovid_perc, width, label='Non-COVID')
+ax.barh(x - width/2, covid_perc, width, label='COVID')
+
+ax.set_xlabel('Percent of Total Publications by Journal')
+ax.set_yticks(x)
+ax.set_yticklabels(labels)
+ax.legend(loc='upper right')
+
+fig.tight_layout()
+fig.savefig('data/journals.tiff', dpi=300)
+plt.show()
+
+
+
+
     
 ####################
 # Classify into ent topics
@@ -357,7 +492,7 @@ topics = ['oncology head neck cancer',
           'pediatric children adolescent',
           'thyroid nodule neoplasm goiter',
           'infectious sinusitis otitis media',
-          'allergy immunology',]
+          'allergy immunology']
 
 text_preprocessed = 'keywords_preprocessed'
 text_vec = 'keywords_vec'
@@ -421,6 +556,8 @@ for n, g in group_words:
 leg = ax.legend(bbox_to_anchor=(1.005, 1), loc=2, borderaxespad=0.)
 for lh in leg.legendHandles: 
     lh.set_alpha(1)
+plt.tight_layout()
+fig.savefig('data/cluster1.tiff', dpi=300)
 plt.show()
 
 
@@ -492,6 +629,8 @@ for i, (name, group) in enumerate(groups):
 leg = plt.legend(bbox_to_anchor=(1.005, 1), loc=2, borderaxespad=0.)
 for lh in leg.legendHandles: 
     lh.set_alpha(1)
+plt.tight_layout()
+plt.savefig('data/cluster2.tiff', dpi=300)
 plt.show()
 
 
@@ -509,120 +648,124 @@ df_top = pd.concat([df_covid, df_noncovid, df_precovid], axis=0, ignore_index=Tr
 
 
 
-    
+df.groupby('group').count()   
 
 #################
 ### DEMOGRAPHICS
 #################
-# BY TIER OF PUBLICATION
-g = get_group_percents(df[df['group'] != 'precovid'], ['group', 'tier'])
+# BY Type OF PUBLICATION
+g = get_group_percents(df, ['group', 'tier'])
 print(g)
 
 chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
-                                       g.loc['noncovid']['count']])
+                                       g.loc['noncovid']['count'],
+                                       g.loc['precovid']['count']])
 print('p =',p)
 
 # - among top pubs
-g_t = get_group_percents(df_top[df_top['group'] != 'precovid'], ['group', 'tier'])
+g_t = get_group_percents(df_top, ['group', 'tier'])
 print(g_t)
 
 chi, p, _, _ = stats.chi2_contingency([g_t.loc['covid']['count'],
-                                       g_t.loc['noncovid']['count']])
+                                       g_t.loc['noncovid']['count'],
+                                       g_t.loc['precovid']['count']])
 print('p =',p)
 
 
+# GROUPED BAR CHART
+g = df.pivot_table(index='tier', 
+                   columns=['journal_abbr', 'group'], 
+                   values='pmid',
+                   fill_value=0, 
+                   aggfunc='count').unstack().to_frame('count')
+    
+g['perc'] = g.groupby(['journal_abbr','group']).apply(lambda x: 100 * x / float(x.sum()))['count']
+g.to_csv('data/journal_group_tier.csv')
 
-# JOURNAL
-# - by group
-g = get_group_percents(df[df['group'] != 'precovid'], ['group', 'journal_abbr'])
-print(g)
 
-chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
-                                       g.loc['noncovid']['count']])
-print('p =', p)
 
-# - by journal
-g = get_group_percents(df[df['group'] != 'precovid'], ['journal_abbr', 'group'])
-print(g)
-journals = np.unique(g.index.get_level_values(0).values)
-table = [g.loc[journal]['count'] for journal in journals]
-chi, p, _, _ = stats.chi2_contingency(table)
-print('p =', p)
 
-# - plot journals and covid papers
-covid_perc = g.xs('covid', level='group')['perc'].values[::-1]
-noncovid_perc = g.xs('noncovid', level='group')['perc'].values[::-1]
-labels = np.unique(g.index.get_level_values(0).values)[::-1]
-
-fig, ax = plt.subplots()
-x = np.arange(len(labels))  # the label locations
-width = 0.35  # the width of the bars
-
-ax.barh(x + width/2, noncovid_perc, width, label='nonCOVID')
-ax.barh(x - width/2, covid_perc, width, label='COVID')
-
-ax.set_xlabel('Percent')
-ax.set_yticks(x)
-ax.set_yticklabels(labels)
-ax.legend()
-
-fig.tight_layout()
-plt.show()
 
 
 # COUNTRY
-g = get_group_percents(df[df['group'] != 'precovid'], ['group', 'country_top'])
+g = get_group_percents(df, ['group', 'country_top'])
 print(g)
 
 chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
-                                       g.loc['noncovid']['count']])
+                                       g.loc['noncovid']['count'],
+                                       g.loc['precovid']['count']])
+print('p =', p)
+
+# - top pubs
+g = get_group_percents(df_top, ['group', 'country_top'])
+print(g)
+
+chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
+                                       g.loc['noncovid']['count'],
+                                       g.loc['precovid']['count']])
 print('p =', p)
 
 # Country & citation count
-g = df[df['group'] != 'precovid'].groupby(['group', 'country_top']).agg({'citation_count':['mean','std'],
+g = df.groupby(['group', 'country_top']).agg({'citation_count':['mean','std'],
                                               'citation_count_ndays':['mean','std']})
 print(g)
 
 
 # JOURNAL IMPACT FACTOR H-INDEX
-g = df[df['group'] != 'precovid'].groupby(['group']).agg({'hindex':['mean','std'],
-                                                          'sjr2019':['mean','std']})
+g = df.groupby(['group']).agg({'h5index':['mean','std']})
 print(g)
 
-F, p = stats.f_oneway(df[df['group'] == 'covid']['hindex'], 
-                      df[df['group'] == 'noncovid']['hindex'],
+F, p = stats.f_oneway(df[df['group'] == 'covid']['h5index'], 
+                      df[df['group'] == 'noncovid']['h5index'],
+                      df[df['group'] == 'precovid']['h5index'],
                       )
-print('p (hindex) =', p)
+print('p (h5index) =', p)
 
-F, p = stats.f_oneway(df[df['group'] == 'covid']['sjr2019'], 
-                      df[df['group'] == 'noncovid']['sjr2019'],
+
+# - top pubs
+g = df_top.groupby(['group']).agg({'h5index':['mean','std']})
+print(g.T)
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['h5index'], 
+                      df_top[df_top['group'] == 'noncovid']['h5index'],
+                      df_top[df_top['group'] == 'precovid']['h5index'],
                       )
-print('p (sjr2019) =', p)
+print('p (h5index) =', p)
 
 
 
 # COVID vs NON-COVID by month
-df_sub = df[(df['year'] == 2020) & (df['group'] != 'precovid')]
-g = get_group_percents(df_sub, ['group', 'month'])
+df_sub = df[(df['group'] != 'precovid')]
+df_sub['year-month'] = pd.to_datetime(df_sub['year'].map(str) + '-' + df_sub['month'].map(str), format='%Y-%m')
+g = get_group_percents(df_sub, ['group', 'year-month'])
+g = g.sort_values(by=['group', 'year-month'])
 print(g)
 
 # - plot by month trendlines
 covid_line = g.xs('covid', level='group')['count']
 noncovid_line = g.xs('noncovid', level='group')['count']
-months = np.unique(g.index.get_level_values(1).values)
+dates = g.xs('noncovid', level='group').index.year.astype(str).values + '-' + g.xs('noncovid', level='group').index.month_name().str.slice(stop=3).values
+dates = g.xs('noncovid', level='group').index.month_name().str.slice(stop=3).values
+
 
 fig, ax = plt.subplots()
-ax.plot(noncovid_line, label='nonCOVID')
+ax.plot(noncovid_line, label='Non-COVID')
 ax.plot(covid_line, label='COVID')
-ax.set_xticks(months)
 ax.legend()
 
-ax.set_xlabel('Months')
+ax.set_xlabel('Year-Month')
 ax.set_ylabel('Number of Publications')
 
 fig.tight_layout()
-plt.title('Publications by Month')
+fig.savefig('data/pubtrends.tiff', dpi=300)
 plt.show()
+
+# regression lines
+lr = sm.OLS(covid_line.values, sm.add_constant(list(range(len(covid_line))))).fit(cov_type='HC3')
+lr.summary()
+
+lr = sm.OLS(noncovid_line.values, sm.add_constant(list(range(len(noncovid_line))))).fit(cov_type='HC3')
+lr.summary()
 
 
 # TOPICS
@@ -634,6 +777,9 @@ chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
                                        g.loc['precovid']['count']])
 print('p =', p)
 
+# --- count missing
+print(df.set_index('group').isna().sum(level=0)['topic'])
+
 # - among top pubs
 g_t = get_group_percents(df_top, ['group', 'topic'])
 print(g_t)
@@ -642,6 +788,85 @@ chi, p, _, _ = stats.chi2_contingency([g_t.loc['covid']['count'],
                                        g_t.loc['noncovid']['count'],
                                        g_t.loc['precovid']['count']])
 print('p =', p)
+# --- count missing
+print(df_top.set_index('group').isna().sum(level=0)['topic'])
+
+
+# ALTMETRICS STATISTICS
+g = df.groupby(['group']).agg({'score':['mean','std'],
+                               'score_3m':['mean','std'],
+                               'score_6m':['mean','std'],
+                               'posts':['mean','std'],
+                               })
+print(g.T)
+
+
+F, p = stats.f_oneway(df[df['group'] == 'covid']['score'], 
+                      df[df['group'] == 'noncovid']['score'],
+                      df[df['group'] == 'precovid']['score'])
+print('p =', p)
+
+F, p = stats.f_oneway(df[df['group'] == 'covid']['score_3m'], 
+                      df[df['group'] == 'noncovid']['score_3m'],
+                      df[df['group'] == 'precovid']['score_3m'])
+print('p =', p)
+
+F, p = stats.f_oneway(df[df['group'] == 'covid']['score_6m'], 
+                      df[df['group'] == 'noncovid']['score_6m'],
+                      df[df['group'] == 'precovid']['score_6m'])
+print('p =', p)
+
+
+F, p = stats.f_oneway(df[df['group'] == 'covid']['posts'], 
+                      df[df['group'] == 'noncovid']['posts'],
+                      df[df['group'] == 'precovid']['posts'])
+print('p =', p)
+
+
+# - top pubs
+g = df_top.groupby(['group']).agg({'score':['mean','std'],
+                               'score_3m':['mean','std'],
+                               'score_6m':['mean','std'],
+                               'posts':['mean','std'],
+                               })
+print(g.T)
+
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['score'], 
+                      df_top[df_top['group'] == 'noncovid']['score'],
+                      df_top[df_top['group'] == 'precovid']['score'])
+print('p =', p)
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['score_3m'], 
+                      df_top[df_top['group'] == 'noncovid']['score_3m'],
+                      df_top[df_top['group'] == 'precovid']['score_3m'])
+print('p =', p)
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['score_6m'], 
+                      df_top[df_top['group'] == 'noncovid']['score_6m'],
+                      df_top[df_top['group'] == 'precovid']['score_6m'])
+print('p =', p)
+
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['posts'], 
+                      df_top[df_top['group'] == 'noncovid']['posts'],
+                      df_top[df_top['group'] == 'precovid']['posts'])
+print('p =', p)
+
+
+
+
+# TOPICS by search algo
+g = get_group_percents(df_topics, ['group', 'tier'])
+print(g)
+
+chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
+                                       g.loc['noncovid']['count'],
+                                       g.loc['precovid']['count']])
+print('p =',p)
+
+
+
 
 
 # CITATION STATISTICS
@@ -659,6 +884,23 @@ F, p = stats.f_oneway(df[df['group'] == 'covid']['citation_count_ndays'],
                       df[df['group'] == 'noncovid']['citation_count_ndays'],
                       df[df['group'] == 'precovid']['citation_count_ndays'])
 print('p (n days) =', p)
+
+
+# - top citations
+g = df_top.groupby(['group']).agg({'citation_count':['mean','std'],
+                               'citation_count_ndays':['mean','std']})
+print(g.T)
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['citation_count'], 
+                      df_top[df_top['group'] == 'noncovid']['citation_count'],
+                      df_top[df_top['group'] == 'precovid']['citation_count'])
+print('p =', p)
+
+F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['citation_count_ndays'], 
+                      df_top[df_top['group'] == 'noncovid']['citation_count_ndays'],
+                      df_top[df_top['group'] == 'precovid']['citation_count_ndays'])
+print('p (n days) =', p)
+
 
 
 # - citations per tier
@@ -679,21 +921,6 @@ for label in labels:
                           df[(df['tier']==label) & (df['group'] == 'noncovid')]['citation_count_ndays'])
     print('p ({} - ndays) = {}'.format(label, p))
 
-
-# - Compare top n papers in covid and noncovid
-g_t = df_top.groupby(['group']).agg({'citation_count':['mean','std'],
-                               'citation_count_ndays':['mean','std']})
-print(g_t)
-
-F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['citation_count'], 
-                      df_top[df_top['group'] == 'noncovid']['citation_count'],
-                      df_top[df_top['group'] == 'precovid']['citation_count'])
-print('p =', p)
-
-F, p = stats.f_oneway(df_top[df_top['group'] == 'covid']['citation_count_ndays'], 
-                      df_top[df_top['group'] == 'noncovid']['citation_count_ndays'],
-                      df_top[df_top['group'] == 'precovid']['citation_count_ndays'])
-print('p (n days) =', p)
 
 
 # - top papers: compare citations per tier
@@ -717,9 +944,57 @@ for label in labels:
 
 
 
-# TODO:
-    # - analysis by topic
-    # - analysis by altmetrics data
+###################
+# Regression
+###################
+# citations/paper
+y = df['citation_count']
+X_cats = pd.get_dummies(df[['tier', 'group', 'journal_abbr', 'country_top']])
+X_cats = X_cats.drop(labels=['tier_tier3', 'group_precovid', 'journal_abbr_Laryngoscope',
+                             'country_top_United States'], axis=1)
+
+
+model = sm.OLS(y, sm.add_constant(X_cats)).fit(cov_type='HC3')
+model.summary()
+
+# citations/paper within 120 days
+y = df['citation_count_ndays']
+
+model = sm.OLS(y, sm.add_constant(X_cats)).fit(cov_type='HC3')
+model.summary()
+
+# Social Media posts
+y = df['posts']
+
+model = sm.OLS(y, sm.add_constant(X_cats)).fit(cov_type='HC3')
+model.summary()
+
+
+# Altmetrics 3mo score
+y = df['score_3m']
+
+model = sm.OLS(y, sm.add_constant(X_cats)).fit(cov_type='HC3')
+model.summary()
+
+
+### REGRESS Citations/article as a function of social media posts
+y = df['citation_count']
+X = df['posts']
+sm.OLS(y, sm.add_constant(X)).fit(cov_type='HC3').summary()
+sm.OLS(y, sm.add_constant(pd.concat([X, X_cats], axis=1))).fit(cov_type='HC3').summary()
+
+
+
+#########################
+# TOPICS SIMPLE ANALYSYS
+#########################
+
+df_topics.groupby('group').size()
+
+mask = (df_topics['pubdate'] >= '2020-04-01') & (df_topics['pubdate'] <= '2021-03-31')
+df_topics_covidyr = df_topics[mask]
+
+df_topics_covidyr.groupby('group').size()
 
 
 

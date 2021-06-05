@@ -23,41 +23,39 @@ from pubmed_query import PubMedQuery
 #    - need to use PubMedArticlesList to query the pmids and then get the dates
 # - 
 
-DATE_RANGE = '("2020/01/01"[Date - Publication] : "2020/12/31"[Date - Publication]))'
-DATE_RANGE_PRECOVID = '("2019/01/01"[Date - Publication] : "2019/12/31"[Date - Publication]))'
+DATE_RANGE = '("2020/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+DATE_RANGE_PRECOVID = '("2019/04/01"[Date - Publication] : "2020/03/31"[Date - Publication])'
 DAYS_CITEDBY_LIMIT = 120
 SAVE_DIR = 'data'
 
-journals = ['Am J Otolaryngol',
-                'Clin Otolaryngol',
-                'Ear and hearing',
-                'Ear Nose Throat J',
-                'Eur Arch Otorhinolaryngol',
-                'Head Neck',
-                'Int J Pediatr Otorhinolaryngol',
-                'Int Forum Allergy Rhinol',
-                'JAMA Otolaryngol Head Neck Surg', 
-                'J Assoc Res Otolaryngol',
-                'J Voice',
-                'J Laryngol Otol',
-                'J Neurol Surg B Skull Base',
-                'Laryngoscope', 
-                'Laryngoscope Investig Otolaryngol',
-                'Oral Oncol',
-                'Otolaryngol Clin North Am',
-                'Otol Neurotol',
-                'Otolaryngol Head Neck Surg',
-                'Rhinology', 
-                ]
 
-terms_covid = ['Covid',
-                'Covid 19',
-                'Covid-19',
+
+journals = ['J Laryngol Otol',
+'Otolaryngol Head Neck Surg',
+'Int Forum Allergy Rhinol',
+'JAMA Otolaryngol Head Neck Surg',
+'Head Neck',
+'Eur Arch Otorhinolaryngol',
+'Auris Nasus Larynx',
+'Laryngoscope',
+'Ann Otol Rhinol Laryngol',
+'Clin Otolaryngol',
+'Am J Rhinol Allergy',
+'Int J Pediatr Otorhinolaryngol',
+'Acta Otolaryngol',
+'Otol Neurotol',
+'Ear Hear',]
+
+terms_covid = ['COVID',
+                'COVID 19',
+                'COVID-19',
                 'Coronavirus',
                 'Coronavirus 19',
                 'Coronavirus-19',
                 'SARS-COV-2'
                 ]
+
+
 
 
 # COVID
@@ -89,14 +87,102 @@ else:
 
 # PRECOVID
 if not os.path.exists(SAVE_DIR + '/precovid2019.pkl'):
-    query_phrase_precovid = '({}) AND (("{}[Journal]"))'.format(DATE_RANGE_PRECOVID,
-                                                                '"[Journal]) OR ("'.join([journal for journal in journals]))
+    query_phrase_precovid = '({}) AND ((("{}[Journal]")) NOT (({})))'.format(DATE_RANGE_PRECOVID,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             ') OR ('.join([term for term in terms_covid]))
     query_precovid = PubMedQuery(query_phrase_precovid)
     with open(SAVE_DIR + '/precovid2019.pkl', 'wb') as file:
         pickle.dump(query_precovid, file, pickle.HIGHEST_PROTOCOL)
 else:
     with open(SAVE_DIR + '/precovid2019.pkl', 'rb') as file:
         query_precovid = pickle.load(file)
+        
+        
+        
+#### OTHER_TOPICS
+# - otitis media
+filename = 'otitis_media.pkl'
+terms = 'otitis media'
+date_range = '("2011/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+if not os.path.exists(SAVE_DIR + '/' + filename):
+    query_phrase_om = '({}) AND ((("{}[Journal]")) AND ({}) NOT (({})))'.format(date_range,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             terms,
+                                                                             ') OR ('.join([term for term in terms_covid]))
+    query_om = PubMedQuery(query_phrase_om)
+    with open(SAVE_DIR + '/' + filename, 'wb') as file:
+        pickle.dump(query_om, file, pickle.HIGHEST_PROTOCOL)
+else:
+    with open(SAVE_DIR + '/' + filename, 'rb') as file:
+        query_om = pickle.load(file)
+
+# - SNHL
+filename = 'snhl.pkl'
+terms = 'sensorineural hearing loss'
+date_range = '("2011/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+if not os.path.exists(SAVE_DIR + '/' + filename):
+    query_phrase_snhl = '({}) AND ((("{}[Journal]")) AND ({}) NOT (({})))'.format(date_range,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             terms,
+                                                                             ') OR ('.join([term for term in terms_covid]))
+    query_snhl = PubMedQuery(query_phrase_snhl)
+    with open(SAVE_DIR + '/' + filename, 'wb') as file:
+        pickle.dump(query_snhl, file, pickle.HIGHEST_PROTOCOL)
+else:
+    with open(SAVE_DIR + '/' + filename, 'rb') as file:
+        query_snhl = pickle.load(file)
+
+
+# - Chronic Sinusitis
+filename = 'chronic_sinusitis.pkl'
+terms = 'chronic sinusitis'
+date_range = '("2011/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+if not os.path.exists(SAVE_DIR + '/' + filename):
+    query_phrase_cs = '({}) AND ((("{}[Journal]")) AND ({}) NOT (({})))'.format(date_range,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             terms,
+                                                                             ') OR ('.join([term for term in terms_covid]))
+    query_cs = PubMedQuery(query_phrase_cs)
+    with open(SAVE_DIR + '/' + filename, 'wb') as file:
+        pickle.dump(query_cs, file, pickle.HIGHEST_PROTOCOL)
+else:
+    with open(SAVE_DIR + '/' + filename, 'rb') as file:
+        query_cs = pickle.load(file)
+
+# - OSA
+filename = 'osa.pkl'
+terms = 'obstructive sleep apnea'
+date_range = '("2011/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+if not os.path.exists(SAVE_DIR + '/' + filename):
+    query_phrase_osa = '({}) AND ((("{}[Journal]")) AND ({}) NOT (({})))'.format(date_range,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             terms,
+                                                                             ') OR ('.join([term for term in terms_covid]))
+    query_osa = PubMedQuery(query_phrase_osa)
+    with open(SAVE_DIR + '/' + filename, 'wb') as file:
+        pickle.dump(query_osa, file, pickle.HIGHEST_PROTOCOL)
+else:
+    with open(SAVE_DIR + '/' + filename, 'rb') as file:
+        query_osa = pickle.load(file)
+
+# hoarseness
+filename = 'hoarseness.pkl'
+terms = 'hoarseness'
+date_range = '("2011/04/01"[Date - Publication] : "2021/03/31"[Date - Publication])'
+if not os.path.exists(SAVE_DIR + '/' + filename):
+    query_phrase_h = '({}) AND ((("{}[Journal]")) AND ({}) NOT (({})))'.format(date_range,
+                                                                             '"[Journal]) OR ("'.join([journal for journal in journals]),
+                                                                             terms,
+                                                                             ') OR ('.join([term for term in terms_covid]))
+    query_h = PubMedQuery(query_phrase_h)
+    with open(SAVE_DIR + '/' + filename, 'wb') as file:
+        pickle.dump(query_h, file, pickle.HIGHEST_PROTOCOL)
+else:
+    with open(SAVE_DIR + '/' + filename, 'rb') as file:
+        query_h = pickle.load(file)
+
+
+
 
 
 ### SAVE AS CSV
@@ -184,6 +270,26 @@ df_precovid = add_citedBy_time(df_precovid, days=DAYS_CITEDBY_LIMIT)
 df_precovid.to_pickle(SAVE_DIR + '/precovid2019_df.pkl')
 
 
+# -
+df_om = pubmed_query_to_csv(query_om)
+df_om = add_citedBy_time(df_om, days=DAYS_CITEDBY_LIMIT)
+df_om.to_pickle(SAVE_DIR + '/otitis_media_df.pkl')
+
+df_snhl = pubmed_query_to_csv(query_snhl)
+df_snhl = add_citedBy_time(df_snhl, days=DAYS_CITEDBY_LIMIT)
+df_snhl.to_pickle(SAVE_DIR + '/snhl_df.pkl')
+
+df_cs = pubmed_query_to_csv(query_cs)
+df_cs = add_citedBy_time(df_cs, days=DAYS_CITEDBY_LIMIT)
+df_cs.to_pickle(SAVE_DIR + '/chronic_sinusitis_df.pkl')
+
+df_osa = pubmed_query_to_csv(query_osa)
+df_osa = add_citedBy_time(df_osa, days=DAYS_CITEDBY_LIMIT)
+df_osa.to_pickle(SAVE_DIR + '/osa_df.pkl')
+
+df_h = pubmed_query_to_csv(query_h)
+df_h = add_citedBy_time(df_h, days=DAYS_CITEDBY_LIMIT)
+df_h.to_pickle(SAVE_DIR + '/hoarseness_df.pkl')
 
 
 

@@ -317,7 +317,7 @@ else:
     # FASTTEXT FOR unsupercised clustering
     # https://towardsdatascience.com/making-sense-of-text-clustering-ca649c190b20
     
-    model = fasttext.load_model(SAVE_DIR + '/BioWordVec_PubMed_MIMICIII_d200.bin')
+    model = fasttext.load_model('../BioWordVec_PubMed_MIMICIII_d200.bin')
     
     ###############################
     # Document clusters - ABSTRACT
@@ -425,6 +425,10 @@ df = df[df['tier'] != 'drop']
 # Count topics:
 df_topics.groupby('group').count()
 
+# Count topics in PreCOVID:
+df_topics_precovid = df_topics[(df_topics['pubdate'] < '2020-03-31') & (df_topics['pubdate'] > '2019-04-01')]
+df_topics_precovid.groupby('group').count()
+ 
 
 ##################
 # JOURNAL - portion COVID
@@ -500,7 +504,7 @@ text_vec = 'keywords_vec'
 # text_vec = 'abstract_vec'
 
 if 'model' not in globals():
-    model = fasttext.load_model(SAVE_DIR + '/BioWordVec_PubMed_MIMICIII_d200.bin')
+    model = fasttext.load_model('../BioWordVec_PubMed_MIMICIII_d200.bin')
 
 topics_vec = [model.get_sentence_vector(topic) for topic in topics]
 
@@ -860,11 +864,6 @@ print('p =', p)
 g = get_group_percents(df_topics, ['group', 'tier'])
 print(g)
 
-chi, p, _, _ = stats.chi2_contingency([g.loc['covid']['count'],
-                                       g.loc['noncovid']['count'],
-                                       g.loc['precovid']['count']])
-print('p =',p)
-
 
 
 
@@ -943,6 +942,44 @@ for label in labels:
 
 
 
+# pubs before and after covid
+journals_we_had_data_on = [
+    'JAMA Otolaryngol Head Neck Surg',
+    'Laryngoscope',
+    'Otolaryngol Head Neck Surg',
+    'Head Neck',
+    'Otol Neurotol',
+    'Int Forum Allergy Rhinol',
+    'J Laryngol Otol']
+
+
+def pandemic_period(group):
+    if group == 'precovid': 
+        return 0
+    else: 
+        return 1
+df['pandemic_period'] = df.apply(lambda x: pandemic_period(x['group']), axis=1)
+grps = df.groupby('journal_abbr')
+
+pre_journals_we_have_data_on = 0
+pre_others = 0
+post_journals_we_have_data_on = 0
+post_others = 0
+for i, g in grps:
+    pre = sum(g['pandemic_period'] == 0)
+    post = sum(g['pandemic_period'] == 1)
+    print(i, post/pre)
+    
+    if i in journals_we_had_data_on:
+        pre_journals_we_have_data_on += pre
+        post_journals_we_have_data_on += post
+    else:
+        pre_others += pre
+        post_others += post
+
+print('Increase in Journals we got data on:', post_journals_we_have_data_on/pre_journals_we_have_data_on)
+print('Increase in Other Journals:', post_others/pre_others)
+
 
 ###################
 # Regression
@@ -995,6 +1032,243 @@ mask = (df_topics['pubdate'] >= '2020-04-01') & (df_topics['pubdate'] <= '2021-0
 df_topics_covidyr = df_topics[mask]
 
 df_topics_covidyr.groupby('group').size()
+
+
+
+
+##############################
+# ANALYSIS OF ENT EDITOR DATA
+##############################
+df_e = pd.read_excel(SAVE_DIR + '/COVIDENTsubmission.xlsx')
+
+journal_names = pd.DataFrame.from_dict([],
+                                        orient='index')
+
+df_e['journal'] = df_e['journal'].replace({'JAMA-OtoHNS': 'JAMA Otolaryngol Head Neck Surg',
+                         'Laryngoscope': 'Laryngoscope',
+                         'Otolaryngology–Head and Neck Surgery': 'Otolaryngol Head Neck Surg',
+                         'Head and Neck': 'Head Neck',
+                         'Otology & Neurotology': 'Otol Neurotol',
+                         'Int Forum Rhinology and Allergy': 'Int Forum Allergy Rhinol',
+                          'Journal of Laryngology and Otology': 'J Laryngol Otol'})
+
+# - calculate non-COVID values
+df_e['nonCOVID_submitted'] = df_e['submittedtotalarticles2020'] - df_e['submittedCOVIDarticles2020']
+df_e['nonCOVID_accepted'] = df_e['acceptedtotalarticles2020'] - df_e['acceptedCOVIDarticles2020']
+
+
+# - calc acceptance_rates
+df_e['preCOVID_acceptance_rate'] = df_e['acceptedarticlestotal2019'] / df_e['submittedarticlestotal2019']
+df_e['nonCOVID_acceptance_rate'] = df_e['nonCOVID_accepted'] / df_e['nonCOVID_submitted']
+df_e['COVID_acceptance_rate'] = df_e['acceptedCOVIDarticles2020'] / df_e['submittedCOVIDarticles2020']
+
+# Compare proportions
+def compare_journal_props(journal, df_e):
+    res = {}
+    print('-'*40)
+    print(journal)
+    # - compare precovid to covid
+    accepted_count = [df_e[df_e['journal'] == journal]['acceptedarticlestotal2019'].values[0],
+                      df_e[df_e['journal'] == journal]['acceptedCOVIDarticles2020'].values[0]]
+    
+    rejected_count = [df_e[df_e['journal'] == journal]['submittedarticlestotal2019'].values[0] - accepted_count[0],
+                      df_e[df_e['journal'] == journal]['submittedCOVIDarticles2020'].values[0] - accepted_count[1]]
+    
+    _, p_value, _, _ = stats.chi2_contingency([accepted_count, rejected_count])
+    print('precovid vs covid: {:.4f}'.format(p_value))
+    
+    res.update({'precov_cov': p_value})
+    
+    # - compare precovid to noncovid
+    accepted_count = [df_e[df_e['journal'] == journal]['acceptedarticlestotal2019'].values[0],
+                      df_e[df_e['journal'] == journal]['nonCOVID_accepted'].values[0]]
+    
+    rejected_count = [df_e[df_e['journal'] == journal]['submittedarticlestotal2019'].values[0] - accepted_count[0],
+                      df_e[df_e['journal'] == journal]['nonCOVID_submitted'].values[0] - accepted_count[1]]
+    _, p_value, _, _ = stats.chi2_contingency([accepted_count, rejected_count])
+    print('precovid vs noncovid: {:.4f}'.format(p_value))
+    res.update({'precov_noncov': p_value})
+    
+    # - compare noncovid to covid
+    accepted_count = [df_e[df_e['journal'] == journal]['nonCOVID_accepted'].values[0],
+                      df_e[df_e['journal'] == journal]['acceptedCOVIDarticles2020'].values[0]]
+    
+    rejected_count = [df_e[df_e['journal'] == journal]['nonCOVID_submitted'].values[0] - accepted_count[0],
+                      df_e[df_e['journal'] == journal]['submittedCOVIDarticles2020'].values[0] - accepted_count[1]]
+    _, p_value, _, _ = stats.chi2_contingency([accepted_count, rejected_count])
+    print('noncovid vs covid: {:.4f}'.format(p_value))
+    res.update({'noncov_cov': p_value})
+    return res
+    
+
+p_vals = {}
+for journal in np.unique(df_e['journal']):
+    p_vals.update({journal: compare_journal_props(journal, df_e)})
+print(p_vals)
+
+# Make grouped bar chart of acceptance rates
+labels = df_e['journal']
+COVID_acceptance_rate = df_e['COVID_acceptance_rate']*100
+nonCOVID_acceptance_rate = df_e['nonCOVID_acceptance_rate']*100
+preCOVID_acceptance_rate = df_e['preCOVID_acceptance_rate']*100
+
+x = np.arange(len(labels))  # the label locations
+width = 0.2  # the width of the bars
+
+fig, ax = plt.subplots()
+rects1 = ax.barh(x + width, COVID_acceptance_rate, width, label='COVID')
+rects2 = ax.barh(x, nonCOVID_acceptance_rate, width, label='non-COVID')
+rects3 = ax.barh(x - width*1.1, preCOVID_acceptance_rate, width, label='pre-COVID')
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_xlabel('Percent')
+ax.set_yticks(x)
+ax.set_yticklabels(labels)
+ax.legend()
+fig.tight_layout()
+fig.savefig('data/journal_submission.tiff', dpi=300)
+plt.show()
+
+
+
+# stacked + grouped bar chart of raw numbers
+labels = df_e['journal']
+COVID_accepted = df_e['acceptedCOVIDarticles2020']
+COVID_submitted = df_e['submittedCOVIDarticles2020']
+
+nonCOVID_accepted = df_e['nonCOVID_accepted']
+nonCOVID_submitted = df_e['nonCOVID_submitted']
+
+preCOVID_accepted = df_e['acceptedarticlestotal2019']
+preCOVID_submitted = df_e['submittedarticlestotal2019']
+
+
+COVID_acceptance_rate = df_e['COVID_acceptance_rate']*100
+nonCOVID_acceptance_rate = df_e['nonCOVID_acceptance_rate']*100
+preCOVID_acceptance_rate = df_e['preCOVID_acceptance_rate']*100
+
+x = np.arange(len(labels))  # the label locations
+width = 0.2  # the width of the bars
+
+fig, ax = plt.subplots()
+
+rects1 = ax.barh(x + width, COVID_submitted, width, label='Submitted COVID', color='#2B8259')
+rects2 = ax.barh(x + width, COVID_accepted, width, label='Accepted COVID', hatch='/', color='#84D6AF')
+
+rects3 = ax.barh(x, nonCOVID_submitted, width, label='Submitted non-COVID', color='#346B81')
+rects4 = ax.barh(x, nonCOVID_accepted, width, label='Accepted non-COVID', hatch='/', color='#95C3D5')
+
+rects5 = ax.barh(x - width*1.3, preCOVID_submitted, width, label='Submitted pre-COVID', color='#B94A4A')
+rects6 = ax.barh(x - width*1.3, preCOVID_accepted, width, label='Accepted pre-COVID', hatch='/', color='#CE8282')
+
+for cov, noncov, precov, cov_sub, noncov_sub, precov_sub, xi in zip(COVID_acceptance_rate, nonCOVID_acceptance_rate, preCOVID_acceptance_rate,
+                                                                           COVID_submitted, nonCOVID_submitted, preCOVID_submitted, x,
+                                                                           ):
+    ax.text(cov_sub+20, xi + width*0.8,'{:.0f}%'.format(cov), fontweight='bold')
+    ax.text(noncov_sub+20, xi-width*0.2,'{:.0f}%'.format(noncov), fontweight='bold')
+    ax.text(precov_sub+20, xi - width*1.5,'{:.0f}%'.format(precov), fontweight='bold')
+# rects1 = ax.barh(x + width, COVID_acceptance_rate, width, label='COVID')
+# rects2 = ax.barh(x, nonCOVID_acceptance_rate, width, label='non-COVID')
+# rects3 = ax.barh(x - width*1.1, preCOVID_acceptance_rate, width, label='pre-COVID')
+
+for journal, xi in zip(labels, x):
+    print(journal)
+    p_val = p_vals[journal]
+    for l, p in p_val.items():
+        print(l, p)
+        
+        if p<0.0001:
+            p='***'
+        elif p<0.01:
+            p='**'
+        elif p<0.05:
+            p= '*'
+        else:
+            continue
+        
+        props = {'connectionstyle':'bar','arrowstyle':'-',\
+                 'shrinkA':20,'shrinkB':0,'linewidth':2}
+            
+        if l == 'precov_cov':
+            h = 700
+            if journal == 'J Laryngol Otol':
+                h = 200
+            ax.text(h+120,  xi, p, zorder=10, fontsize=16, rotation=90, fontweight='bold', ha='center', va='center')
+            xs = [h, h+20, h+20, h]
+            ys = [xi-width*1.3, xi-width*1.3, xi+width, xi+width]
+            ax.plot(xs, ys,  linewidth=2, color = 'black')
+        if l == 'precov_noncov':
+            h = 900
+            ax.text(h+120,  xi-width*0.5, p, zorder=10, fontsize=16, rotation=90, fontweight='bold', ha='center', va='center')
+            xs = [h, h+20, h+20, h]
+            ys = [xi-width*1.3, xi-width*1.3, xi, xi]
+            ax.plot(xs, ys,  linewidth=2, color = 'black')
+            # ax.annotate('', xy=(200, xi), xytext=(200,xi+width), arrowprops=props)
+        if l == 'noncov_cov':
+            h = 1100
+            if journal == 'J Laryngol Otol':
+                h = 550
+            ax.text(h+120,  xi+width*0.7, p, zorder=10, fontsize=16, rotation=90, fontweight='bold', ha='center', va='center')
+            xs = [h, h+20, h+20, h]
+            ys = [xi, xi, xi+width, xi+width]
+            ax.plot(xs, ys,  linewidth=2, color = 'black')
+            # ax.annotate('', xy=(200, xi), xytext=(200,xi+width), arrowprops=props)
+
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_xlabel('Number of Manuscripts')
+ax.set_yticks(x)
+ax.set_yticklabels(labels)
+ax.legend()
+fig.tight_layout()
+fig.savefig('data/journal_submission_count.tiff', dpi=300)
+plt.show()
+
+
+
+# - Submission count before and after COVID
+print('-'*30)
+print('pre-COVID submission count: {}'.format(df_e['submittedarticlestotal2019'].sum()))
+print('COVID & nonCOVID submission count: {}'.format(df_e['submittedtotalarticles2020'].sum()))
+print('{:.2f}% increase'.format((df_e['submittedtotalarticles2020'].sum()/df_e['submittedarticlestotal2019'].sum()-1) * 100))
+
+print('-'*30)
+print('pre-COVID accepted count: {}'.format(df_e['acceptedarticlestotal2019'].sum()))
+print('COVID & nonCOVID accepted count: {}'.format(df_e['acceptedtotalarticles2020'].sum()))
+print('{:.2f}% increase'.format((df_e['acceptedtotalarticles2020'].sum()/df_e['acceptedarticlestotal2019'].sum()-1) * 100))
+
+
+#########################
+# Odds Ratio of COVID article getting accepted
+#########################
+COVID_accepted = df_e['acceptedCOVIDarticles2020'].sum()
+COVID_submitted = df_e['submittedCOVIDarticles2020'].sum()
+
+nonCOVID_accepted = df_e['nonCOVID_accepted'].sum()
+nonCOVID_submitted = df_e['nonCOVID_submitted'].sum()
+
+ratio = (COVID_accepted / COVID_submitted) / (nonCOVID_accepted / nonCOVID_submitted)
+_, p, _, _ = stats.chi2_contingency([[COVID_accepted, nonCOVID_accepted], [COVID_submitted, nonCOVID_submitted]])
+
+print('COVID articles had an acceptance rate {:.3f} times that of nonCOVID (p={:.4f})'.format(ratio, p))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
